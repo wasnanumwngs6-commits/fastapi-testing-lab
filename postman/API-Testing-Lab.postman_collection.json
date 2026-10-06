@@ -1,0 +1,741 @@
+{
+  "info": {
+    "name": "API Testing Lab",
+    "description": "Unit API tests, an end-to-end CRUD flow, and CSV data-driven product validation.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('token')) {",
+          "  pm.sendRequest({",
+          "    url: pm.variables.get('baseUrl') + '/api/auth/login',",
+          "    method: 'POST',",
+          "    header: { 'Content-Type': 'application/json' },",
+          "    body: {",
+          "      mode: 'raw',",
+          "      raw: JSON.stringify({",
+          "        username: pm.variables.get('username'),",
+          "        password: pm.variables.get('password'),",
+          "      }),",
+          "    },",
+          "  }, (err, res) => {",
+          "    if (err || res.code !== 200) {",
+          "      console.error('Auto-login failed', err || res.code);",
+          "      return;",
+          "    }",
+          "    pm.collectionVariables.set('token', res.json().token);",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "productId",
+      "value": ""
+    },
+    {
+      "key": "productName",
+      "value": ""
+    },
+    {
+      "key": "productSchema",
+      "value": "{\"type\":\"object\",\"required\":[\"id\",\"name\",\"price\",\"stock\",\"discountPercent\",\"finalPrice\"],\"properties\":{\"id\":{\"type\":\"integer\",\"minimum\":1},\"name\":{\"type\":\"string\",\"minLength\":1},\"price\":{\"type\":\"number\",\"exclusiveMinimum\":0},\"stock\":{\"type\":\"integer\",\"minimum\":0},\"discountPercent\":{\"type\":\"number\",\"minimum\":0,\"maximum\":100},\"finalPrice\":{\"type\":\"number\",\"minimum\":0}}}"
+    }
+  ],
+  "item": [
+    {
+      "name": "01-Unit-API-Tests",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code should be 200', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response time should be below 500ms', () => {",
+                  "  pm.expect(pm.response.responseTime).to.be.below(500);",
+                  "});",
+                  "pm.test('Content-Type should be JSON', () => {",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "});",
+                  "pm.test('Body should contain status ok', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login - Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code should be 200', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test('Response should contain a Bearer token', () => {",
+                  "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body.tokenType).to.eql('Bearer');",
+                  "});",
+                  "pm.collectionVariables.set('token', body.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login - Wrong Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"wrong-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code should be 401', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('Error should describe invalid credentials', () => {",
+                  "  pm.expect(pm.response.json().error).to.eql('Invalid username or password');",
+                  "});",
+                  "pm.test('Response should not contain a token', () => {",
+                  "  pm.expect(pm.response.json()).to.not.have.property('token');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const productSchema = JSON.parse(pm.collectionVariables.get('productSchema'));",
+                  "pm.test('Status code should be 200', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Body should be a non-empty array', () => {",
+                  "  pm.expect(pm.response.json()).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "pm.test('Each product should match the JSON Schema', () => {",
+                  "  pm.response.to.have.jsonSchema({ type: 'array', items: productSchema });",
+                  "});",
+                  "pm.test('Each finalPrice should be calculated correctly', () => {",
+                  "  pm.response.json().forEach((product) => {",
+                  "    const expected = Math.round(product.price * (100 - product.discountPercent)) / 100;",
+                  "    pm.expect(product.finalPrice).to.eql(expected);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product - Not Found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/999999"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code should be 404', () => {",
+                  "  pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test('Error should mention the missing product id', () => {",
+                  "  pm.expect(pm.response.json().error).to.include('999999');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product - Invalid Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/abc"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid id should return 400 with a clear error', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().error).to.eql('id must be a positive integer');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product - No Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Monitor\",\n  \"price\": 5990,\n  \"stock\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/products"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Creating without a token should return Unauthorized', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error).to.eql('Unauthorized');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Product - Invalid Body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"price\": -10,\n  \"stock\": 1.5,\n  \"discountPercent\": 150\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/products"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid product should return 400', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test('Validation details should report all four invalid fields', () => {",
+                  "  pm.expect(pm.response.json().details).to.have.members([",
+                  "    'name is required',",
+                  "    'price must be a number greater than 0',",
+                  "    'stock must be an integer >= 0',",
+                  "    'discountPercent must be between 0 and 100',",
+                  "  ]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02-Integration-Flow",
+      "item": [
+        {
+          "name": "S1 - Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[S1] Login should succeed', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.collectionVariables.set('token', pm.response.json().token);",
+                  "pm.collectionVariables.unset('productId');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S2 - Create Product",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('productName', `Integration Monitor ${Date.now()}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[S2] Product should be created (201)', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test('[S2] Response should match the product JSON Schema', () => {",
+                  "  const schema = JSON.parse(pm.collectionVariables.get('productSchema'));",
+                  "  pm.response.to.have.jsonSchema(schema);",
+                  "});",
+                  "pm.test('[S2] Created product values and finalPrice should be correct', () => {",
+                  "  pm.expect(body.name).to.eql(pm.collectionVariables.get('productName'));",
+                  "  pm.expect(body.price).to.eql(5990);",
+                  "  pm.expect(body.finalPrice).to.eql(5091.5);",
+                  "});",
+                  "pm.collectionVariables.set('productId', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{productName}}\",\n  \"price\": 5990,\n  \"stock\": 3,\n  \"discountPercent\": 15\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/products"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "S3 - Get Product By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{productId}}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[S3] Created product should be readable (200)', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('[S3] Retrieved product should match the saved values', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.id).to.eql(Number(pm.collectionVariables.get('productId')));",
+                  "  pm.expect(body.name).to.eql(pm.collectionVariables.get('productName'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S4 - Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stock\": 10,\n  \"discountPercent\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{productId}}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[S4] Product should be updated (200)', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('[S4] Stock, finalPrice, and updatedAt should be updated', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.stock).to.eql(10);",
+                  "  pm.expect(body.finalPrice).to.eql(5990);",
+                  "  pm.expect(body).to.have.property('updatedAt');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S5 - Verify In List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[S5] Updated product should still be listed', () => {",
+                  "  const id = Number(pm.collectionVariables.get('productId'));",
+                  "  const item = pm.response.json().find((product) => product.id === id);",
+                  "  pm.expect(item, 'Product should be present in the list').to.exist;",
+                  "  pm.expect(item.stock).to.eql(10);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S6 - Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{productId}}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[S6] Product should be deleted (204)', () => {",
+                  "  pm.response.to.have.status(204);",
+                  "});",
+                  "pm.test('[S6] Delete response should have an empty body', () => {",
+                  "  pm.expect(pm.response.text()).to.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S7 - Verify Deleted",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{productId}}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[S7] Deleted product should no longer be found (404)', () => {",
+                  "  pm.response.to.have.status(404);",
+                  "});",
+                  "pm.collectionVariables.unset('productId');",
+                  "pm.collectionVariables.unset('productName');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03-Data-Driven",
+      "item": [
+        {
+          "name": "Create Product (Data-Driven)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{name}}\",\n  \"price\": {{price}},\n  \"stock\": {{stock}},\n  \"discountPercent\": {{discountPercent}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/products"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const label = pm.iterationData.get('caseName');",
+                  "const expectedStatus = Number(pm.iterationData.get('expectedStatus'));",
+                  "pm.test(`[${label}] status should be ${expectedStatus}`, () => {",
+                  "  pm.response.to.have.status(expectedStatus);",
+                  "});",
+                  "if (expectedStatus === 201) {",
+                  "  const body = pm.response.json();",
+                  "  const expectedFinalPrice = Number(pm.iterationData.get('expectedFinalPrice'));",
+                  "  pm.test(`[${label}] finalPrice should be ${expectedFinalPrice}`, () => {",
+                  "    pm.expect(body.finalPrice).to.eql(expectedFinalPrice);",
+                  "  });",
+                  "  pm.sendRequest({",
+                  "    url: `${pm.variables.get('baseUrl')}/api/products/${body.id}`,",
+                  "    method: 'DELETE',",
+                  "    header: { Authorization: `Bearer ${pm.collectionVariables.get('token')}` },",
+                  "  });",
+                  "} else {",
+                  "  pm.test(`[${label}] validation details should be present`, () => {",
+                  "    pm.expect(pm.response.json().details).to.be.an('array').that.is.not.empty;",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
